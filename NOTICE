@@ -1,0 +1,7 @@
+igglass
+Copyright (c) 2026 maciasdav
+
+This product includes AGSL shaders from Kyant0/backdrop
+(https://github.com/Kyant0/backdrop), Copyright 2025 Kyant, licensed under
+the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0).
+They live in app/src/main/java/com/maciasdxv/igglass/Shaders.kt.

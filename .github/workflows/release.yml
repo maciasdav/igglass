@@ -17,14 +17,14 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Versión
         id: version
@@ -56,11 +56,11 @@ jobs:
         run: |
           ./gradlew assembleRelease \
             -PversionName="${{ steps.version.outputs.name }}" \
-            -PversionCode="${{ github.run_number }}"
+            -PversionCode="$((100 + ${{ github.run_number }}))"
           cp app/build/outputs/apk/release/app-release.apk "igglass-${{ steps.version.outputs.tag }}.apk"
 
       - name: Publicar Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: igglass ${{ steps.version.outputs.tag }}

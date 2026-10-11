@@ -28,7 +28,8 @@ android {
         // RuntimeShader / RenderEffect.createRuntimeShaderEffect requieren API 33.
         minSdk = 33
         targetSdk = 36
-        // En CI salen del tag (v1.2.3 → 1.2.3) y del número de ejecución.
+        // En CI salen del tag (v1.2.3 → 1.2.3) y de 100 + el número de ejecución,
+        // para quedar siempre por encima de las compilaciones locales.
         versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 21
         versionName = providers.gradleProperty("versionName").orNull ?: "0.21-dev"
     }

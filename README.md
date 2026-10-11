@@ -29,16 +29,24 @@ An LSPosed module that gives Instagram for Android's tab bar an iOS 26-style *li
 
 Use a test account: Instagram can detect root and LSPosed, and this module makes no attempt to hide them.
 
-## Build and install
+## Install
+
+Download the latest `igglass-v*.apk` from [Releases](../../releases), install it, then:
+
+1. In LSPosed (or Vector), enable **IG Liquid Glass** and tick Instagram in its scope.
+2. Force-stop Instagram: `adb shell am force-stop com.instagram.android`.
+3. Open Instagram.
+
+Releases are built by GitHub Actions whenever a `v*` tag is pushed (`git tag v1.2.3 && git push origin v1.2.3`).
+
+## Build from source
 
 ```bash
 ./gradlew assembleRelease
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-1. In LSPosed (or Vector), enable **IG Liquid Glass** and tick Instagram in its scope.
-2. Force-stop Instagram: `adb shell am force-stop com.instagram.android`.
-3. Open Instagram.
+Without a `keystore.properties` file, release builds are signed with the debug key. Android won't update an APK signed with a different key, so uninstall the module before switching between your own builds and the published releases.
 
 ## Settings
 

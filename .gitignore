@@ -7,3 +7,5 @@ local.properties
 /dumps/
 /igglass/
 .kotlin/
+/keystore/
+keystore.properties

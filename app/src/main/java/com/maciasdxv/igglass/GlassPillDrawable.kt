@@ -37,6 +37,8 @@ internal class GlassPillDrawable(
     private val bar: ViewGroup,
     /** Las pestañas en orden; la posición de [motion] es un índice en esta lista. */
     private val tabs: List<View>,
+    /** Orientación y cápsula de la barra. */
+    private val shape: BarShape,
     initialIndex: Int,
     /** El color original de la barra; decide si el relleno es claro u oscuro. */
     private val themeColor: () -> Int,
@@ -59,6 +61,8 @@ internal class GlassPillDrawable(
 
     /** Rectángulo de la píldora este frame, en coordenadas de la barra. */
     private val pill = RectF()
+    /** La cápsula de la barra; en el riel la píldora se centra en ella. */
+    private val capsule = RectF()
     /** Forma de la píldora en coordenadas propias (0,0 arriba a la izquierda). */
     private val localPath = Path()
     /** La misma forma en coordenadas de la barra, para recortar la sombra. */
@@ -81,7 +85,7 @@ internal class GlassPillDrawable(
     private fun drawPill(canvas: Canvas) {
         if (!bar.isShown || tabs.isEmpty()) return
         if (!layoutPill()) return
-        val radius = pill.height() / 2f
+        val radius = minOf(pill.width(), pill.height()) / 2f
 
         if (motion.isFlat || !GlassParams.PILL_GLASS) {
             // En reposo, o con la píldora lisa: solo el relleno, sin captura ni shaders.
@@ -137,19 +141,21 @@ internal class GlassPillDrawable(
 
     /**
      * Coloca [pill] según el movimiento. Tamaño en reposo: la pestaña menos
-     * los márgenes. Levantada: [GlassParams.PILL_LIFT_DP] más alta, con la
-     * misma proporción. Encima se aplica la deformación por aceleración.
+     * los márgenes. Levantada: [GlassParams.PILL_LIFT_DP] más gruesa, con la
+     * misma proporción. Encima se aplica la deformación por aceleración, que
+     * estira la píldora en el eje de la barra y la aplana en el otro.
      */
     private fun layoutPill(): Boolean {
         val pos = motion.position.coerceIn(0f, (tabs.size - 1).toFloat())
         val i0 = floor(pos).toInt()
         val i1 = minOf(i0 + 1, tabs.size - 1)
         val f = pos - i0
-        val a = tabs[i0]
-        val b = tabs[i1]
-        val centerX = lerp(a.left + a.width / 2f, b.left + b.width / 2f, f)
-        val tabWidth = lerp(a.width.toFloat(), b.width.toFloat(), f)
+        val center = lerp(shape.center(i0), shape.center(i1), f)
+        val tabSize = lerp(shape.size(i0), shape.size(i1), f)
+        return if (shape.vertical) layoutVertical(center, tabSize) else layoutHorizontal(center, tabSize)
+    }
 
+    private fun layoutHorizontal(centerX: Float, tabWidth: Float): Boolean {
         val restW = tabWidth - 2 * dp(GlassParams.PILL_INSET_H_DP)
         val restH = bar.height - 2 * dp(GlassParams.PILL_INSET_V_DP)
         if (restW <= 0f || restH <= 0f) return false
@@ -159,6 +165,22 @@ internal class GlassPillDrawable(
         val w = (restW + (liftedW - restW) * motion.liftX) * (1 + motion.deviation)
         val h = (restH + (liftedH - restH) * motion.liftY) * (1 - motion.deviation)
         val centerY = bar.height / 2f
+        pill.set(centerX - w / 2f, centerY - h / 2f, centerX + w / 2f, centerY + h / 2f)
+        return true
+    }
+
+    /** Riel: lo mismo con los ejes cambiados; el grosor lo da la cápsula, no el riel. */
+    private fun layoutVertical(centerY: Float, tabHeight: Float): Boolean {
+        if (!shape.capsule(capsule)) return false
+        val restH = tabHeight - 2 * dp(GlassParams.PILL_INSET_H_DP)
+        val restW = capsule.width() - 2 * dp(GlassParams.PILL_INSET_V_DP)
+        if (restW <= 0f || restH <= 0f) return false
+        val liftedW = restW + dp(GlassParams.PILL_LIFT_DP)
+        val liftedH = liftedW * restH / restW
+
+        val h = (restH + (liftedH - restH) * motion.liftX) * (1 + motion.deviation)
+        val w = (restW + (liftedW - restW) * motion.liftY) * (1 - motion.deviation)
+        val centerX = capsule.centerX()
         pill.set(centerX - w / 2f, centerY - h / 2f, centerX + w / 2f, centerY + h / 2f)
         return true
     }

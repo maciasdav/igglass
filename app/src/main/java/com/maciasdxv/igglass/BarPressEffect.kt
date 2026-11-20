@@ -19,7 +19,11 @@ import kotlin.math.sign
  * cápsula, iconos y píldora se mueven juntos. Solo se tocan esas propiedades
  * mientras hay algo que animar; en reposo quedan como las dejó Instagram.
  */
-internal class BarPressEffect(private val bar: View) {
+internal class BarPressEffect(
+    private val bar: View,
+    /** Riel vertical (tablets): el tirón y el estiramiento grandes van en vertical. */
+    private val vertical: Boolean = false,
+) {
 
     private val density = bar.resources.displayMetrics.density
     private fun dp(value: Float) = value * density
@@ -74,8 +78,8 @@ internal class BarPressEffect(private val bar: View) {
         if (!active) return
         touchX = x
         touchY = y
-        shiftX.target = rubberBand(dx, dp(GlassParams.PRESS_MAX_SHIFT_X_DP)).toDouble()
-        shiftY.target = rubberBand(dy, dp(GlassParams.PRESS_MAX_SHIFT_Y_DP)).toDouble()
+        shiftX.target = rubberBand(dx, maxShiftX()).toDouble()
+        shiftY.target = rubberBand(dy, maxShiftY()).toDouble()
         start()
     }
 
@@ -153,12 +157,10 @@ internal class BarPressEffect(private val bar: View) {
         amount = press.value.toFloat().coerceIn(0f, 1.2f)
         val sx = shiftX.value.toFloat()
         val sy = shiftY.value.toFloat()
-        val maxX = dp(GlassParams.PRESS_MAX_SHIFT_X_DP)
-        val maxY = dp(GlassParams.PRESS_MAX_SHIFT_Y_DP)
         // Crece al presionar y se estira en el eje hacia el que tira el dedo.
         val grow = GlassParams.PRESS_SCALE * press.value.toFloat()
-        val stretchX = GlassParams.PRESS_STRETCH * (abs(sx) / maxX)
-        val stretchY = GlassParams.PRESS_STRETCH_Y * (abs(sy) / maxY)
+        val stretchX = (if (vertical) GlassParams.PRESS_STRETCH_Y else GlassParams.PRESS_STRETCH) * (abs(sx) / maxShiftX())
+        val stretchY = (if (vertical) GlassParams.PRESS_STRETCH else GlassParams.PRESS_STRETCH_Y) * (abs(sy) / maxShiftY())
         // Encogida: escala menor y el borde inferior en su sitio (+ una pequeña caída).
         val c = compact.value.toFloat()
         val shrink = 1f - (1f - GlassParams.COMPACT_SCALE) * c
@@ -170,6 +172,10 @@ internal class BarPressEffect(private val bar: View) {
         // El brillo bajo el dedo vive en el fondo de la barra.
         bar.invalidate()
     }
+
+    /** Lo máximo que sigue al dedo en cada eje: más a lo largo de la barra que de través. */
+    private fun maxShiftX() = dp(if (vertical) GlassParams.PRESS_MAX_SHIFT_Y_DP else GlassParams.PRESS_MAX_SHIFT_X_DP)
+    private fun maxShiftY() = dp(if (vertical) GlassParams.PRESS_MAX_SHIFT_X_DP else GlassParams.PRESS_MAX_SHIFT_Y_DP)
 
     /** Resorte 1D con el mismo integrador que la píldora (subpasos de 1/240 s). */
     private class Spring(private val stiffness: Double, private val damping: Double) {

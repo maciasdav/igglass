@@ -1,6 +1,7 @@
 package com.maciasdxv.igglass
 
 import android.app.Activity
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Handler
@@ -28,6 +29,12 @@ import kotlin.math.roundToInt
  * Instagram coloca el feed con un margen inferior igual al alto de la barra y
  * todo el contenedor con un margen igual a la franja del sistema. Para que la
  * barra flote, ambos márgenes se ponen a 0 y la barra se sube esa franja.
+ *
+ * Tablets: Instagram cambia la barra de abajo por un riel vertical a un lado.
+ * Se reconoce por las mismas pestañas (`feed_tab`, `clips_tab`...): el riel es
+ * su ancestro común más cercano, si es más alto que ancho. En el riel no se
+ * toca el layout (el contenido no pasa por debajo): solo se cambia el fondo
+ * por una cápsula que envuelve las pestañas y se añaden píldora y arrastre.
  */
 internal object TabBarGlass {
 
@@ -48,37 +55,157 @@ internal object TabBarGlass {
     }
 
     private fun tryAttach(decor: View, attemptsLeft: Int) {
-        val barId = idOf(decor, "tab_bar")
-        if (barId == 0) {
-            GlassLog.w("no existe el recurso tab_bar en esta versión de Instagram")
-            return
-        }
-        val bar = decor.findViewById<View>(barId) as? ViewGroup
-        if (bar == null || bar.width == 0) {
+        val found = findBar(decor)
+        if (found == null) {
             if (attemptsLeft > 0) {
                 decor.postDelayed({ safe("reintento barra") { tryAttach(decor, attemptsLeft - 1) } }, RETRY_DELAY_MS)
             }
             // Sin barra en esta Activity (login, modales...): no es un error.
             return
         }
+        val (bar, vertical) = found
         if (installed.containsKey(bar)) return
         installed[bar] = Unit
-        Installation(bar).install()
+        Installation(bar, vertical).install()
+    }
+
+    /**
+     * La barra de esta ventana y si es vertical. Primero la barra de abajo
+     * (`tab_bar`) si se ve; si no, el riel de las tablets; si tampoco hay
+     * riel, la barra de abajo aunque aún no se vea (como antes).
+     */
+    private fun findBar(decor: View): Pair<ViewGroup, Boolean>? {
+        val barId = idOf(decor, "tab_bar")
+        val bottom = (if (barId != 0) decor.findViewById<View>(barId) as? ViewGroup else null)
+            ?.takeIf { it.width > 0 && it.width >= it.height }
+        if (bottom != null && bottom.isShown) return bottom to false
+        if (GlassParams.RAIL_ENABLED) findRail(decor)?.let { return it to true }
+        return bottom?.let { it to false }
+    }
+
+    /** El ancestro común de las pestañas visibles, si es un riel vertical. */
+    private fun findRail(decor: View): ViewGroup? {
+        val ids = TAB_NAMES.map { idOf(decor, it) }.filter { it != 0 }.toSet()
+        if (ids.isEmpty()) return null
+        val shown = ArrayList<View>()
+        collectShown(decor, ids, shown)
+        // Una por nombre: la misma pestaña podría estar repetida en otra parte.
+        val tabs = shown.distinctBy { it.id }
+        if (tabs.size < 2) return null
+        val rail = commonAncestor(tabs) ?: return null
+        if (rail.height <= rail.width) return null
+        return rail
+    }
+
+    private fun collectShown(view: View, ids: Set<Int>, out: MutableList<View>) {
+        if (view.visibility != View.VISIBLE) return
+        if (view.id in ids && view.width > 0 && view.height > 0 && view.isShown) {
+            out += view
+            return
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) view.getChildAt(i)?.let { collectShown(it, ids, out) }
+        }
+    }
+
+    private fun commonAncestor(views: List<View>): ViewGroup? {
+        var candidate = views.first().parent
+        while (candidate is ViewGroup) {
+            if (views.all { isDescendant(it, candidate as ViewGroup) }) return candidate
+            candidate = candidate.parent
+        }
+        return null
+    }
+
+    private fun isDescendant(view: View, ancestor: ViewGroup): Boolean {
+        var p = view.parent
+        while (p is View) {
+            if (p === ancestor) return true
+            p = p.parent
+        }
+        return false
+    }
+
+    /**
+     * Las pestañas del riel: sus hijas visibles que se pueden tocar (o tienen
+     * algo que se puede tocar dentro), de arriba abajo. Así entran también las
+     * que solo existen en tablets (actividad, crear...) sin conocer su nombre.
+     * Una hija que agrupa varias pestañas conocidas se abre y cuentan sus hijas.
+     */
+    private fun railTabs(rail: ViewGroup): List<Pair<String, View>> {
+        val ids = TAB_NAMES.map { idOf(rail, it) }.filter { it != 0 }.toSet()
+        val out = ArrayList<View>()
+        fun add(group: ViewGroup) {
+            for (i in 0 until group.childCount) {
+                val child = group.getChildAt(i) ?: continue
+                if (child.visibility != View.VISIBLE || child.height <= 0 || !hasClickable(child)) continue
+                if (child is ViewGroup && child.id !in ids && countKnown(child, ids) >= 2) add(child) else out += child
+            }
+        }
+        add(rail)
+        val loc = IntArray(2)
+        return out.sortedBy { v -> v.getLocationInWindow(loc); loc[1] }
+            .mapIndexed { i, v -> nameOf(v, "riel_$i") to v }
+    }
+
+    private fun countKnown(view: View, ids: Set<Int>): Int {
+        if (view.id in ids) return 1
+        if (view !is ViewGroup) return 0
+        var n = 0
+        for (i in 0 until view.childCount) view.getChildAt(i)?.let { n += countKnown(it, ids) }
+        return n
+    }
+
+    private fun hasClickable(view: View): Boolean {
+        if (view.isClickable) return true
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i) ?: continue
+                if (child.visibility == View.VISIBLE && hasClickable(child)) return true
+            }
+        }
+        return false
+    }
+
+    private fun nameOf(view: View, fallback: String): String = try {
+        if (view.id == View.NO_ID) fallback else view.resources.getResourceEntryName(view.id)
+    } catch (t: Throwable) {
+        fallback
     }
 
     /** Todo lo que se le añade a una barra concreta, y cómo se mantiene. */
-    private class Installation(private val bar: ViewGroup) {
+    private class Installation(
+        private val bar: ViewGroup,
+        /** true: riel vertical de tablets. false: barra de abajo. */
+        private val vertical: Boolean,
+    ) {
 
         private val density = bar.resources.displayMetrics.density
-        private val tabs = TAB_NAMES.mapNotNull { name ->
-            val id = idOf(bar, name)
-            if (id == 0) null else bar.findViewById<View>(id)?.let { name to it }
+        private val tabs = if (vertical) {
+            railTabs(bar)
+        } else {
+            TAB_NAMES.mapNotNull { name ->
+                val id = idOf(bar, name)
+                if (id == 0) null else bar.findViewById<View>(id)?.let { name to it }
+            }
         }
         private val tabViews = tabs.map { it.second }
+        private val shape = BarShape(bar, tabViews, vertical)
 
-        /** El color con el que Instagram pinta la barra; marca el tema claro u oscuro. */
-        private var themeColor = (bar.background as? ColorDrawable)?.color ?: Color.BLACK
+        /**
+         * El color con el que Instagram pinta la barra; marca el tema claro u
+         * oscuro. Si la barra no tiene color propio (el riel puede no tenerlo),
+         * se deduce del modo noche.
+         */
+        private var themeColor = (bar.background as? ColorDrawable)?.color ?: fallbackThemeColor()
 
+        private fun fallbackThemeColor(): Int {
+            val night = bar.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+            return if (night == Configuration.UI_MODE_NIGHT_NO) Color.WHITE else Color.BLACK
+        }
+
+        /** El contenedor de la barra; lo que dibuja antes que ella queda detrás. */
+        private val container = bar.parent as? ViewGroup
         private val wrapper = bar.parent as? FrameLayout
         private val shadow = idOf(bar, "tab_bar_shadow").takeIf { it != 0 }
             ?.let { id -> wrapper?.findViewById<View>(id) }
@@ -90,15 +217,19 @@ internal object TabBarGlass {
         private var navInset = (coordinator?.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
 
         private lateinit var pill: GlassPillDrawable
-        private val press = if (GlassParams.FLOATING_BAR) BarPressEffect(bar) else null
+        private val press = if (GlassParams.FLOATING_BAR) BarPressEffect(bar, vertical) else null
         private var capsule: CapsuleGlassDrawable? = null
         private var videoBlur: VideoBlur? = null
         private var dragView: PillDragView? = null
 
-        private val floating = GlassParams.FLOATING_BAR && wrapper != null
+        /** Barra de abajo flotante: el contenido pasa por debajo y se reescriben márgenes. */
+        private val floating = GlassParams.FLOATING_BAR && wrapper != null && !vertical
+
+        /** Fondo de vidrio: en la barra flotante y en el riel (que no cambia su layout). */
+        private val glass = floating || (GlassParams.FLOATING_BAR && vertical && container != null)
 
         /** Vistas a las que Instagram aparta del borde inferior con un margen igual a [barSpace]. */
-        private val spacedSiblings = wrapper?.let { w ->
+        private val spacedSiblings = wrapper?.takeIf { !vertical }?.let { w ->
             (0 until w.indexOfChild(bar)).mapNotNull { w.getChildAt(it) }.filter { child ->
                 // Los ViewStub no ocupan espacio: corregirlos solo costaría frames.
                 child !== shadow && child !is ViewStub &&
@@ -130,27 +261,30 @@ internal object TabBarGlass {
             }
             logTabStates()
 
-            pill = GlassPillDrawable(bar, tabViews, selectedIndex() ?: 0) { themeColor }
-            pill.motion.stepDp = tabStepPx() / density
+            pill = GlassPillDrawable(bar, tabViews, shape, selectedIndex() ?: 0) { themeColor }
+            pill.motion.stepDp = shape.step() / density
             pill.setBounds(0, 0, bar.width, bar.height)
             bar.overlay.add(pill)
             bar.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
                 safe("layout píldora") {
                     pill.setBounds(0, 0, v.width, v.height)
-                    pill.motion.stepDp = tabStepPx() / density
+                    pill.motion.stepDp = shape.step() / density
                     pill.invalidateSelf()
                 }
             }
 
-            if (floating) {
-                val capsule = CapsuleGlassDrawable(bar, ::backdropSources, { themeColor }, press)
+            if (glass) {
+                val capsule = CapsuleGlassDrawable(bar, shape, ::backdropSources, { themeColor }, press)
                 this.capsule = capsule
                 videoBlur = VideoBlur(bar, capsule::capsuleRect)
+            }
+            if (floating) {
                 registerLayoutRules()
                 enforceLayout()
             }
+            // La capa de arrastre cubre el contenedor: solo en un FrameLayout no altera su layout.
             if (GlassParams.PILL_DRAG && wrapper != null) {
-                dragView = PillDragView(bar.context, bar, tabViews, pill.motion, press).also {
+                dragView = PillDragView(bar.context, bar, tabViews, shape, pill.motion, press).also {
                     wrapper.addView(it, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
                 }
             }
@@ -166,8 +300,9 @@ internal object TabBarGlass {
                 }
             })
             GlassLog.i(
-                "barra instalada (${bar.width}x${bar.height}, ${tabs.size} pestañas, " +
-                    "flotante=$floating, arrastre=${dragView != null}, franja sistema=${navInset}px)",
+                "${if (vertical) "riel" else "barra"} instalada (${bar.width}x${bar.height}, " +
+                    "${tabs.size} pestañas: ${tabs.joinToString { it.first }}, " +
+                    "flotante=$floating, vidrio=$glass, arrastre=${dragView != null}, franja sistema=${navInset}px)",
             )
         }
 
@@ -206,14 +341,14 @@ internal object TabBarGlass {
             }
             // Respaldo de LayoutGuard: si algo cambió los márgenes por otro camino,
             // corregirlos y saltar este frame para que no se vea el layout intermedio.
-            if (enforceLayout() && cancelledFrames < MAX_CANCELLED_FRAMES) {
+            if (floating && enforceLayout() && cancelledFrames < MAX_CANCELLED_FRAMES) {
                 cancelledFrames++
                 return false
             }
             cancelledFrames = 0
             // Litho monta la interfaz de cada reel al deslizar (sin layout) y puede
             // reiniciar sus propiedades al remontarla: revisarla en cada frame.
-            if (GlassParams.REELS_LIFT_UI && currentTab() == "clips_tab") {
+            if (floating && GlassParams.REELS_LIFT_UI && currentTab() == "clips_tab") {
                 safe("interfaz de reels") { liftReelsUi() }
             }
             capsule.updateBackdrop()
@@ -227,7 +362,7 @@ internal object TabBarGlass {
          */
         private fun onContentScroll(view: View, dy: Int) {
             val press = press ?: return
-            if (nativeLayout() || noCompactTab() || !bar.isShown || !isBehindBar(view)) return
+            if (vertical || nativeLayout() || noCompactTab() || !bar.isShown || !isBehindBar(view)) return
             // Cambio de dirección: empezar a acumular de cero.
             if ((dy > 0) != (scrollAccum > 0)) scrollAccum = 0
             scrollAccum += dy
@@ -436,7 +571,8 @@ internal object TabBarGlass {
                 shadow.visibility = View.INVISIBLE
                 changed = true
             }
-            val padH = ((GlassParams.CAPSULE_MARGIN_H_DP + GlassParams.CAPSULE_PADDING_H_DP) * density).toInt()
+            // En pantallas anchas la cápsula se estrecha (ver BarShape): las pestañas se juntan dentro.
+            val padH = (shape.horizontalMargin() + GlassParams.CAPSULE_PADDING_H_DP * density).toInt()
             // Las pestañas conservan el alto original de la barra: centrarlas en la cápsula.
             val padV = ((capsuleHeight - barSpace) / 2).coerceAtLeast(0)
             if (bar.paddingLeft != padH || bar.paddingRight != padH ||
@@ -450,9 +586,9 @@ internal object TabBarGlass {
 
         /** Lo que queda detrás de la barra: los hermanos anteriores a ella. */
         private fun backdropSources(): List<View> {
-            val wrapper = wrapper ?: return emptyList()
-            val barIndex = wrapper.indexOfChild(bar)
-            return (0 until barIndex).mapNotNull { wrapper.getChildAt(it) }
+            val container = container ?: return emptyList()
+            val barIndex = container.indexOfChild(bar)
+            return (0 until barIndex).mapNotNull { container.getChildAt(it) }
                 .filter { it !== shadow && it.visibility == View.VISIBLE }
         }
 
@@ -469,9 +605,6 @@ internal object TabBarGlass {
 
         private fun selectedIndex(): Int? =
             tabViews.indexOfFirst(::isSelected).takeIf { it >= 0 }
-
-        private fun tabStepPx(): Float =
-            if (tabViews.size < 2) 0f else tabViews[1].left.toFloat() - tabViews[0].left
 
         private fun findAncestor(name: String): View? {
             val id = idOf(bar, name).takeIf { it != 0 } ?: return null
@@ -491,13 +624,17 @@ internal object TabBarGlass {
         }
     }
 
-    /** Instagram puede marcar la pestaña activa en el contenedor o en el icono. */
-    private fun isSelected(view: View): Boolean {
+    /**
+     * Instagram puede marcar la pestaña activa en el contenedor o en el icono.
+     * En el riel la pestaña puede ir envuelta en otro contenedor: se baja un
+     * nivel más.
+     */
+    private fun isSelected(view: View, depth: Int = 2): Boolean {
         if (view.isSelected || view.isActivated) return true
-        if (view is ViewGroup) {
+        if (depth > 0 && view is ViewGroup) {
             for (i in 0 until view.childCount) {
                 val child = view.getChildAt(i) ?: continue
-                if (child.isSelected || child.isActivated) return true
+                if (isSelected(child, depth - 1)) return true
             }
         }
         return false

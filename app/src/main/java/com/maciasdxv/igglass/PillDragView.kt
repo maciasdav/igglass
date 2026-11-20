@@ -18,20 +18,25 @@ import kotlin.math.roundToInt
  *
  * Todo toque sobre la barra pasa por aquí y se reenvía tal cual a la barra,
  * así que tocar, mantener pulsado o tocar dos veces siguen funcionando como en
- * Instagram. Solo cuando el dedo se desliza en horizontal más allá del umbral
+ * Instagram. Solo cuando el dedo se desliza a lo largo de la barra (en
+ * horizontal; en vertical en el riel de las tablets) más allá del umbral
  * del sistema, la barra recibe un CANCEL y el gesto pasa a mover la píldora.
  * Al soltar, si la píldora quedó en otra pestaña, se simula un toque en ella:
  * Instagram cambia de pestaña por su camino normal.
  *
  * Al soltar, basta con haber pasado un 30 % del camino a la siguiente pestaña
  * para cambiar a ella. Más allá de la primera o la última pestaña la píldora
- * se resiste: solo avanza un tercio de lo que se mueve el dedo.
+ * se resiste: solo avanza un tercio de lo que se mueve el dedo. La posición se
+ * calcula con los centros reales de las pestañas, así que la píldora queda
+ * bajo el dedo aunque estén repartidas de forma desigual.
  */
 @SuppressLint("ViewConstructor")
 internal class PillDragView(
     context: Context,
     private val bar: ViewGroup,
     private val tabs: List<View>,
+    /** Orientación de la barra y posición de sus pestañas. */
+    private val shape: BarShape,
     private val motion: PillMotion,
     /** Reacción de toda la barra al dedo (crecer, brillo, seguirlo); null = sin ella. */
     private val press: BarPressEffect?,
@@ -81,22 +86,22 @@ internal class PillDragView(
                 toBar(event.x, event.y)
                 press?.move(point[0], point[1], event.x - downX, event.y - downY)
                 if (!dragging) {
-                    val dx = event.x - downX
-                    val dy = event.y - downY
-                    if (abs(dx) > slop && abs(dx) > abs(dy) && tabs.size > 1) {
+                    val along = along(event)
+                    val across = if (shape.vertical) event.x - downX else event.y - downY
+                    if (abs(along) > slop && abs(along) > abs(across) && tabs.size > 1) {
                         beginDrag(event)
                     } else {
                         forward(event)
                     }
                 }
-                if (dragging) dragTo(event.x - downX)
+                if (dragging) dragTo(along(event))
             }
 
             MotionEvent.ACTION_UP -> {
                 if (!tracking) return false
                 tracking = false
                 press?.up()
-                if (dragging) endDrag(event.x - downX) else forward(event)
+                if (dragging) endDrag(along(event)) else forward(event)
             }
 
             MotionEvent.ACTION_CANCEL -> {
@@ -129,29 +134,32 @@ internal class PillDragView(
         motion.startDrag()
     }
 
-    private fun dragTo(rawDx: Float) {
-        val step = tabStep()
-        if (step <= 0f) return
-        val total = rawDx * direction()
-        val offset = when {
-            total > 0 && startIndex == tabs.lastIndex -> total * EDGE_RESISTANCE
-            total < 0 && startIndex == 0 -> total * EDGE_RESISTANCE
-            else -> total
+    /** Cuánto se movió el dedo desde que tocó, a lo largo de la barra. */
+    private fun along(event: MotionEvent) = if (shape.vertical) event.y - downY else event.x - downX
+
+    /** Posición en pasos de pestaña con el dedo desplazado [delta] px desde que tocó. */
+    private fun fingerPosition(delta: Float): Float = shape.positionAt(shape.center(startIndex) + delta)
+
+    private fun dragTo(delta: Float) {
+        val raw = fingerPosition(delta)
+        val last = tabs.lastIndex.toFloat()
+        val position = when {
+            raw < 0f -> raw * EDGE_RESISTANCE
+            raw > last -> last + (raw - last) * EDGE_RESISTANCE
+            else -> raw
         }
-        val position = startIndex + offset / step
         motion.dragTo(position)
 
-        val approximateTab = position.coerceIn(0f, tabs.lastIndex.toFloat()).roundToInt()
+        val approximateTab = position.coerceIn(0f, last).roundToInt()
         if (approximateTab != lastHapticTab) {
             bar.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
             lastHapticTab = approximateTab
         }
     }
 
-    private fun endDrag(rawDx: Float) {
+    private fun endDrag(delta: Float) {
         dragging = false
-        val step = tabStep()
-        val ratio = if (step > 0f) rawDx * direction() / step else 0f
+        val ratio = fingerPosition(delta) - startIndex
         val shift = when {
             ratio > SWITCH_THRESHOLD -> maxOf(1, ratio.roundToInt())
             ratio < -SWITCH_THRESHOLD -> minOf(-1, ratio.roundToInt())
@@ -164,8 +172,9 @@ internal class PillDragView(
 
     /** Un toque sintético en el centro de [tab], entregado a la barra. */
     private fun tapTab(tab: View) {
-        val x = tab.left + tab.width / 2f
-        val y = tab.top + tab.height / 2f
+        shape.centerOf(tab, point)
+        val x = point[0]
+        val y = point[1]
         val now = SystemClock.uptimeMillis()
         val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
         val up = MotionEvent.obtain(now, now, MotionEvent.ACTION_UP, x, y, 0)
@@ -205,12 +214,6 @@ internal class PillDragView(
         bar.getHitRect(hitRect)
         return hitRect.contains((event.x + left).toInt(), (event.y + top).toInt())
     }
-
-    /** Distancia entre los centros de dos pestañas vecinas. */
-    private fun tabStep(): Float =
-        if (tabs.size < 2) 0f else abs((tabs[1].left + tabs[1].width / 2f) - (tabs[0].left + tabs[0].width / 2f))
-
-    private fun direction() = if (bar.layoutDirection == LAYOUT_DIRECTION_RTL) -1f else 1f
 
     private companion object {
         const val SWITCH_THRESHOLD = 0.3f

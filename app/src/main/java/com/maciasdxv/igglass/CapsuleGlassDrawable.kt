@@ -33,6 +33,8 @@ import kotlin.math.roundToInt
  */
 internal class CapsuleGlassDrawable(
     private val bar: ViewGroup,
+    /** Dónde va la cápsula: barra horizontal o riel vertical. */
+    private val shape: BarShape,
     /** Las vistas de Instagram que quedan detrás de la barra, de abajo arriba. */
     private val sources: () -> List<View>,
     /** El color original de la barra; decide el tinte claro u oscuro. */
@@ -121,7 +123,7 @@ internal class CapsuleGlassDrawable(
             effect,
         )
 
-        val radius = h / 2f
+        val radius = minOf(w, h) / 2f
         lensShader.apply {
             setFloatUniform("size", w.toFloat(), h.toFloat())
             setFloatUniform("offset", 0f, 0f)
@@ -140,18 +142,14 @@ internal class CapsuleGlassDrawable(
     /** La cápsula en coordenadas de la barra (copia). */
     fun capsuleRect(): RectF = RectF().also { if (layoutCapsule()) it.set(capsule) }
 
-    /** La cápsula ocupa el alto de la barra, separada de los lados de la pantalla. */
-    private fun layoutCapsule(): Boolean {
-        val margin = dp(GlassParams.CAPSULE_MARGIN_H_DP)
-        capsule.set(margin, 0f, bar.width - margin, bar.height.toFloat())
-        return capsule.width() > 0f && capsule.height() > 0f
-    }
+    /** Ver [BarShape.capsule]. */
+    private fun layoutCapsule(): Boolean = shape.capsule(capsule)
 
     override fun draw(canvas: Canvas) {
         if (!layoutCapsule()) return
         val w = capsule.width()
         val h = capsule.height()
-        val radius = h / 2f
+        val radius = minOf(w, h) / 2f
         localPath.rewind()
         localPath.addRoundRect(0f, 0f, w, h, radius, radius, Path.Direction.CW)
 

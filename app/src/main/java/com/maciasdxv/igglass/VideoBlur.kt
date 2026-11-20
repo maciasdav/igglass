@@ -70,7 +70,7 @@ internal class VideoBlur(
             hideAll(root)
             return
         }
-        val radius = capsuleWindow.height() / 2f
+        val radius = minOf(capsuleWindow.width(), capsuleWindow.height()) / 2f
         val blur = (GlassParams.VIDEO_BLUR_RADIUS_DP * density).roundToInt()
 
         val t = SurfaceControl.Transaction()

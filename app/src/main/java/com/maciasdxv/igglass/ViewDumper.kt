@@ -26,6 +26,11 @@ internal object ViewDumper {
     /** Margen sobre el borde inferior para la barra de navegación del sistema. */
     private const val BAR_BOTTOM_SLACK_DP = 80
 
+    /** En tablets: una vista alta y estrecha pegada a un lado parece el riel de pestañas. */
+    private const val RAIL_MIN_WIDTH_DP = 40
+    private const val RAIL_MAX_WIDTH_DP = 160
+    private const val RAIL_SIDE_SLACK_DP = 24
+
     fun dump(activity: Activity, label: String? = null) {
         val root = activity.window?.decorView ?: return
         val density = root.resources.displayMetrics.density
@@ -75,6 +80,19 @@ internal object ViewDumper {
                 view.width >= root.width * 0.9f &&
                 heightDp in BAR_MIN_HEIGHT_DP.toFloat()..BAR_MAX_HEIGHT_DP.toFloat() &&
                 fromBottomDp in 0f..BAR_BOTTOM_SLACK_DP.toFloat()
+            val widthDp = view.width / density
+            val fromLeftDp = (loc[0] - rootLoc[0]) / density
+            val fromRightDp = (rootLoc[0] + root.width - (loc[0] + view.width)) / density
+            val isRailLike = view.isShown &&
+                view is ViewGroup &&
+                view.childCount >= 3 &&
+                view.height >= root.height * 0.4f &&
+                widthDp in RAIL_MIN_WIDTH_DP.toFloat()..RAIL_MAX_WIDTH_DP.toFloat() &&
+                (fromLeftDp in 0f..RAIL_SIDE_SLACK_DP.toFloat() || fromRightDp in 0f..RAIL_SIDE_SLACK_DP.toFloat())
+            if (isRailLike) {
+                candidates += "CANDIDATO_RIEL ${view.javaClass.name} id=$id " +
+                    "ancho=${widthDp.toInt()}dp alto=${heightDp.toInt()}dp hijos=${(view as ViewGroup).childCount}"
+            }
             if (isBarLike) {
                 candidates += "CANDIDATO_BARRA ${view.javaClass.name} id=$id " +
                     "alto=${heightDp.toInt()}dp hijos=${(view as ViewGroup).childCount} " +
@@ -97,7 +115,7 @@ internal object ViewDumper {
                 "texture=${stats.texture} compose=${stats.compose} litho=${stats.litho} " +
                 "rn=${stats.reactNative} -> ${file ?: "(no se pudo escribir archivo)"}",
         )
-        if (candidates.isEmpty()) GlassLog.i("sin candidatos a barra de pestañas")
+        if (candidates.isEmpty()) GlassLog.i("sin candidatos a barra ni riel de pestañas")
         candidates.forEach(GlassLog::i)
     }
 

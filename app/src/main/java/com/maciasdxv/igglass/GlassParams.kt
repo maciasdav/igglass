@@ -104,6 +104,29 @@ internal object GlassParams {
     /** Separación entre la cápsula y los lados de la pantalla (iOS: ~21dp). */
     const val CAPSULE_MARGIN_H_DP = 21f
 
+    /**
+     * Ancho máximo de la cápsula horizontal. En pantallas anchas (tablets,
+     * plegables abiertos, teléfono en horizontal) la cápsula queda centrada con
+     * este ancho y las pestañas se juntan dentro, en vez de cruzar toda la
+     * pantalla. 0 = sin límite.
+     */
+    const val CAPSULE_MAX_WIDTH_DP = 440f
+
+    // --- Tablets: riel vertical ------------------------------------------------
+
+    /**
+     * En tablets Instagram cambia la barra de abajo por un riel vertical a un
+     * lado. true: ese riel también se vuelve cápsula de vidrio con píldora.
+     * No se toca su layout: solo el fondo, la píldora y el arrastre.
+     */
+    const val RAIL_ENABLED = true
+
+    /** Separación entre la cápsula y los lados del riel. */
+    const val RAIL_MARGIN_DP = 8f
+
+    /** Cuánto sobra la cápsula por encima de la primera pestaña y por debajo de la última. */
+    const val RAIL_PADDING_DP = 6f
+
     /** Separación entre los bordes de la cápsula y la primera/última pestaña. */
     const val CAPSULE_PADDING_H_DP = 0f
 

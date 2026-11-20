@@ -19,6 +19,8 @@ An LSPosed module that gives Instagram for Android's tab bar an iOS 26-style *li
 
   ![Bar over a reel](docs/barra-reels.png)
 
+- **Tablets and wide screens.** On tablets Instagram swaps the bottom bar for a vertical rail on the side; the rail gets the same glass capsule wrapped around its icons, with the pill sliding (and draggable) up and down. The rail's layout isn't touched. On wide screens with the bottom bar (landscape, unfolded foldables) the capsule stays centered at up to 440dp wide instead of crossing the whole screen.
+
 - **Glass over videos.** Instagram draws videos in a `SurfaceView` that the app itself can't capture, so the module asks the system compositor for the blur instead.
 
 ## Requirements
@@ -70,6 +72,7 @@ adb logcat -s IGGlass                    # module log
 | `CapsuleGlassDrawable.kt` | The capsule: records what's behind it into a `RenderNode` and applies blur → saturation → lens |
 | `GlassPillDrawable.kt`, `PillMotion.kt` | The pill and its physics |
 | `PillDragView.kt` | Tells taps from drags; taps are forwarded to Instagram untouched |
+| `BarShape.kt` | Bar geometry for both orientations: bottom bar or tablet rail |
 | `BarPressEffect.kt` | Press, rubber band and shrinking |
 | `LayoutGuard.kt` | Pins Instagram's margins before they're applied, so the bar doesn't jump |
 | `VideoBlur.kt` | A compositor layer that blurs `SurfaceView` videos |
@@ -87,6 +90,7 @@ The module anchors to **resource names**, not numeric IDs or obfuscated classes.
 Names in use:
 
 - **Bar:** `tab_bar`, `tab_bar_shadow` and the tabs `feed_tab`, `clips_tab`, `direct_tab`, `search_tab`, `profile_tab`.
+- **Tablet rail:** no name of its own; it's found as the closest common container of the visible tabs above, when it's taller than it is wide. The dump marks likely rails as `CANDIDATO_RIEL`.
 - **Layout:** `layout_container_center_right_coordinator_layout`, `swipeable_tab_view_pager`, `layout_container_main`.
 - **Reels:** `clips_viewer_view_pager`, `clips_video_container`, `clips_ufi_component`, `clips_bottom_legibility_gradient_component`, `scrubber`.
 

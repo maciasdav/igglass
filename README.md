@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **igglass is now [InstaGlass](https://github.com/maciasdav/InstaGlass).** It comes with a settings app to tune the glass live, and its releases are signed with a new key, so uninstall igglass before installing it. This repo is archived and will not get updates.
+
 # igglass
 
 An LSPosed module that gives Instagram for Android's tab bar an iOS 26-style *liquid glass* look. It only changes how things look: it doesn't touch the account, the network or any data.
